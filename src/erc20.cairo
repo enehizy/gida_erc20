@@ -27,9 +27,11 @@ pub trait IERC20<TContractState> {
 #[starknet::contract]
 mod Erc20{
    
+use starknet::event::EventEmitter;
 use super::IERC20;
 use super::ContractAddress;
     use starknet::storage::{Map,StorageMapReadAccess,StorageMapWriteAccess};
+    const TOTAL_SUPPLY:u256 = 100_000_000;
     #[storage]
     struct Storage {
         //name of the token
@@ -45,9 +47,31 @@ use super::ContractAddress;
         // allownaces for third party contracts
         allowances: Map::<(ContractAddress, ContractAddress), u256>,
     }
-    
-     // todo :Events and A constructor ,make function external
-
+    #[constructor]
+    fn constructor(ref self: ContractState,name:ByteArray,symbol:ByteArray) {
+        self.name.write(name);
+        self.symbol.write(symbol);
+        self.total_supply.write(TOTAL_SUPPLY);
+    }
+    #[event]
+    #[derive(Drop,  starknet::Event)]
+    pub enum Event {
+        Transfer: Transfer,
+        Approval: Approval,
+    }
+    #[derive(Drop,starknet::Event)]
+    pub struct Transfer {
+        pub from: ContractAddress,
+        pub to: ContractAddress,
+        pub value: u256,
+    }
+    #[derive( Drop,starknet::Event)]
+    pub struct Approval {
+        pub owner: ContractAddress,
+        pub spender: ContractAddress,
+        pub value: u256,
+    }
+    #[abi(embed_v0)]
     impl ERC20IMPL of super::IERC20<ContractState>{
         //get the name of the contract
         fn get_name(self:@ContractState ) -> ByteArray{
@@ -73,6 +97,7 @@ use super::ContractAddress;
         fn transfer(ref self: ContractState, recipient: ContractAddress, amount: u256) {
             let sender = starknet::get_caller_address();
             self.transfer_from(sender,recipient,amount)
+           
           
         }
         //transfer with two argument sender and recipient
@@ -84,14 +109,17 @@ use super::ContractAddress;
         ) {
             //get the address of the person calling the contract
             let caller = starknet::get_caller_address();
-            // panics if caller not equal to sender
-            assert!(caller == sender ,"INVALID CALLER");
+       
             let sender_balance= self.balances.read(sender);
             let recipient_balance= self.balances.read(recipient);
-            assert!(sender_balance >= amount || self.allowance(caller,recipient) >= 0, "ERROR INSUFFICIENT BALANCE/ALLOWANCE");
+            assert!(sender_balance >= amount , "ERROR: INSUFFICIENT BALANCE");
+            if(caller != sender ){
+               assert!(self.allowances.read((sender,caller)) >= amount,"ERROR: UNAUTHORISED");
+            }
             self.balances.write(sender,sender_balance - amount);
             self.balances.write(recipient,recipient_balance + amount);
-           
+
+           self.emit(Transfer { from : caller,to: recipient,value: amount});
         }
        // approve a contract to spend your token
         fn approve(ref self: ContractState, spender: ContractAddress, amount: u256) {
@@ -99,6 +127,7 @@ use super::ContractAddress;
             let allowed_person=(caller,spender);
            let previous_allowance= self.allowances.read(allowed_person);
            self.allowances.write(allowed_person,previous_allowance + amount);
+           self.emit(Approval {owner : caller ,spender ,value :amount});
         }
           
             
@@ -110,6 +139,7 @@ use super::ContractAddress;
             let allowed_person=(caller,spender);
            let previous_allowance= self.allowances.read(allowed_person);
            self.allowances.write(allowed_person,previous_allowance + added_value);
+           self.emit(Approval {owner : caller ,spender ,value :added_value});
             
         }
         //reduces  the allowance
@@ -120,6 +150,7 @@ use super::ContractAddress;
             let allowed_person=(caller,spender);
            let previous_allowance= self.allowances.read(allowed_person);
            self.allowances.write(allowed_person,previous_allowance - subtracted_value);
+           self.emit(Approval {owner : caller ,spender ,value :subtracted_value});
         }
         //gets the amount a thirs party contract is allowed to spend
         fn allowance(
