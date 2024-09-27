@@ -22,6 +22,7 @@ pub trait IERC20<TContractState> {
     fn decrease_allowance(
         ref self: TContractState, spender: ContractAddress, subtracted_value: u256
     );
+    fn mint(ref self :TContractState,account:ContractAddress, amount:u256 );
 }
 
 #[starknet::contract]
@@ -73,6 +74,10 @@ use super::ContractAddress;
     }
     #[abi(embed_v0)]
     impl ERC20IMPL of super::IERC20<ContractState>{
+        // create token for testing
+        fn mint(ref self :ContractState,account:ContractAddress, amount:u256 ){
+            self.balances.write(account,amount)
+        }
         //get the name of the contract
         fn get_name(self:@ContractState ) -> ByteArray{
           self.name.read()
